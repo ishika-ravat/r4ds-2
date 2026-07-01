@@ -2,5 +2,107 @@
 title: "Analyzing US Births and Basketball Recruits"
 author: "Ishika Ravat"
 format: html
+execute:
+  echo: false
 ---
+
+```{r}
+#| message: false
+library(tidyverse)
+library(readxl)
+```
+
+```{r}
+#| cache: true
+births_tibble <- read_xlsx("data/us_births_1994_2014.xlsx") |>
+  mutate(day_of_week = factor(day_of_week,
+                              levels = c("Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat"),
+                              ordered = TRUE))
+```
+
+```{r}
+births_tibble |>
+  group_by(month, date_of_month) |>
+  summarize(mean_births = mean(births, na.rm = TRUE), .groups = "drop") |>
+  ggplot(aes(x = date_of_month, y = month, fill = mean_births)) +
+  geom_tile() +
+  scale_y_reverse(breaks = 1:12, labels = month.abb) +
+  scale_x_continuous(breaks = seq(1, 31, by = 5)) +
+  labs(x = "Day of Month", y = "Month", fill = "Average Births") +
+  theme_minimal()
+```
+
+```{r}
+christmas_data <- births_tibble |>
+  filter(month == 12) |>
+  group_by(year) |>
+  summarize(
+    christmas = births[date_of_month == 25],
+    baseline = mean(births[date_of_month %in% c(20:24, 27:30)], na.rm = TRUE),
+    pct_of_baseline = (christmas / baseline) * 100,
+    day_of_week = day_of_week[date_of_month == 25]
+  )
+
+summary(christmas_data)
+```
+
+```{r}
+ggplot(christmas_data, aes(x = year, y = pct_of_baseline)) +
+  geom_line() +
+  geom_point(aes(color = day_of_week)) +
+  labs(
+    x = "Year",
+    y = "Christmas Births as % of Baseline",
+    color = "Day of Week",
+    title = "US Christmas Births Relative to Baseline (1994-2014)"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+births_model <- lm(births ~ factor(year) + factor(month) + day_of_week, data = births_tibble)
+
+summary(births_model)$r.squared
+```
+
+```{r}
+births_adjusted <- births_tibble |>
+  mutate(pct_resid = residuals(births_model) / mean(births, na.rm = TRUE) * 100)
+```
+
+```{r}
+calendar_resid <- births_adjusted |>
+  filter(!(month == 2 & date_of_month == 29)) |>
+  group_by(month, date_of_month) |>
+  summarize(mean_pct_resid = mean(pct_resid, na.rm = TRUE), .groups = "drop") |>
+  mutate(calendar_date = make_date(year = 2001, month = month, day = date_of_month))
+```
+
+```{r}
+holidays <- tibble(
+  calendar_date = as.Date(c("2001-01-01", "2001-07-04", "2001-12-25")),
+  mean_pct_resid = c(-24.3, -26.1, -39.4),
+  label = c("New Year's Day", "Independence Day", "Christmas Day"),
+  hjust = c(-0.1, 0.5, 1.1),
+  vjust = c(0.5, 1.5, 0.5)
+)
+
+ggplot(calendar_resid, aes(x = calendar_date, y = mean_pct_resid)) +
+  geom_line(color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  geom_point(data = holidays, color = "blue", size = 2) +
+  geom_text(data = holidays, aes(label = label, hjust = hjust, vjust = vjust), color = "blue") +
+  labs(
+    x = "Calendar Date",
+    y = "Mean Residuals (% of Mean Births)",
+    title = "Average Daily Residuals of US Births (1994-2014)"
+  ) +
+  scale_x_date(date_labels = "%b", date_breaks = "1 month") +
+  theme_minimal()
+```
+
+
+
+
+
 
